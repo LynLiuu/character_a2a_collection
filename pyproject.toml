@@ -1,0 +1,20 @@
+[project]
+name = "seed-sc"
+version = "0.1.0"
+description = "Seed character 测试工程：底座 SDK (seedcore) + 上层工程 (apps/)"
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml>=6.0",
+    # 真实调用方舟时需要；mock 模式下不导入，可不安装。
+    "volcengine-python-sdk>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "base: 底座 SDK 测试（mock 掉网络）",
+    "apps: 上层工程测试",
+]
