@@ -6,12 +6,12 @@
      - 防饿死：连续 N 轮没发言的角色获得 starvation_bonus * N 的加成。
      - 平手时按「最久没发言」再按角色顺序决定，保证可复现（不引入随机）。
   3. Speak 阶段 (role.speak span)：胜者生成完整发言，写入公共历史。
-终止：达到 max_rounds / 发言含 [END]。
+终止：达到 max_rounds（设为 None 则无限轮、永不自动结束）或 Ctrl+C。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import seedcore
 
@@ -37,7 +37,7 @@ class Orchestrator:
         self,
         roles: List[Role],
         scene: str = "",
-        max_rounds: int = 8,
+        max_rounds: Optional[int] = 8,  # None = 无限轮，永不自动结束
         starvation_bonus: float = 1.5,
     ) -> None:
         if not roles:
@@ -59,7 +59,12 @@ class Orchestrator:
         )
         return best[0]
 
-    def run(self) -> GameResult:
+    def run(self, on_turn: Optional[Callable[[Turn], None]] = None) -> GameResult:
+        """跑一局对话。
+
+        max_rounds=None 时无限循环、永不自动结束（Ctrl+C 优雅停止）。
+        on_turn：每产生一轮发言就回调一次，用于实时流式打印。
+        """
         turns: List[Turn] = []
         history: List[str] = []
         if self.scene:
@@ -70,37 +75,40 @@ class Orchestrator:
             roles=[r.id for r in self.roles],
             max_rounds=self.max_rounds,
         ) as t:
-            for rnd in range(1, self.max_rounds + 1):
-                with t.span("game.round", round=rnd) as round_span:
-                    scored = []
-                    for role in self.roles:
-                        with round_span.span("role.bid", role=role.id) as bid_span:
-                            bid = role.bid(history, rnd, trace_span=bid_span)
-                            weight = self._weight(role, bid)
-                            bid_span.set(eagerness=bid.eagerness, weight=round(weight, 2))
-                            scored.append((role, bid, weight))
-
-                    winner = self._pick(scored)
-                    round_span.set(winner=winner.id)
-
-                    with round_span.span("role.speak", role=winner.id) as speak_span:
-                        text = winner.speak(history, rnd, trace_span=speak_span)
-                        speak_span.set(chars=len(text))
-
-                    history.append(f"{winner.name}：{text}")
-                    turns.append(Turn(round=rnd, speaker_id=winner.id, speaker_name=winner.name, text=text))
-
-                    # 更新防饿死计数
-                    for role in self.roles:
-                        if role.id == winner.id:
-                            role.rounds_since_spoke = 0
-                        else:
-                            role.rounds_since_spoke += 1
-
-                    if "[END]" in text:
-                        round_span.set(ended=True)
-                        break
-
             trace_path = seedcore.trace.trace_path(t)
+            try:
+                rnd = 0
+                while self.max_rounds is None or rnd < self.max_rounds:
+                    rnd += 1
+                    with t.span("game.round", round=rnd) as round_span:
+                        scored = []
+                        for role in self.roles:
+                            with round_span.span("role.bid", role=role.id) as bid_span:
+                                bid = role.bid(history, rnd, trace_span=bid_span)
+                                weight = self._weight(role, bid)
+                                bid_span.set(eagerness=bid.eagerness, weight=round(weight, 2))
+                                scored.append((role, bid, weight))
+
+                        winner = self._pick(scored)
+                        round_span.set(winner=winner.id)
+
+                        with round_span.span("role.speak", role=winner.id) as speak_span:
+                            text = winner.speak(history, rnd, trace_span=speak_span)
+                            speak_span.set(chars=len(text))
+
+                        history.append(f"{winner.name}：{text}")
+                        turn = Turn(round=rnd, speaker_id=winner.id, speaker_name=winner.name, text=text)
+                        turns.append(turn)
+                        if on_turn is not None:
+                            on_turn(turn)
+
+                        # 更新防饿死计数
+                        for role in self.roles:
+                            if role.id == winner.id:
+                                role.rounds_since_spoke = 0
+                            else:
+                                role.rounds_since_spoke += 1
+            except KeyboardInterrupt:
+                t.set(interrupted=True)
 
         return GameResult(turns=turns, trace_path=trace_path)

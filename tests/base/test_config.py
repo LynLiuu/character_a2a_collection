@@ -31,5 +31,6 @@ def test_is_mock_false_with_real_key_and_endpoint(monkeypatch):
 def test_is_mock_true_when_endpoint_placeholder(monkeypatch):
     monkeypatch.delenv("SEEDCORE_MOCK", raising=False)
     monkeypatch.setenv("ARK_API_KEY", "real-key-123")
-    cfg = load_config()  # 端点仍是占位
+    cfg = load_config()
+    cfg.ark.endpoints[cfg.defaults.model] = "PLACEHOLDER_EP_DEFAULT"  # 端点未配置
     assert is_mock(cfg) is True

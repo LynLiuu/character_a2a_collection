@@ -51,11 +51,18 @@ def test_pick_weighting_prefers_high_eager_assertive():
     assert orch._pick(scored).id == "loud"
 
 
-def test_end_marker_stops_early():
+def test_runs_exactly_max_rounds_no_early_end():
+    # 模型即便输出 [END] 也不再提前结束，固定跑满 max_rounds
     client = seedcore.get_client(reload=True, mock_handler=lambda m, meta: (
-        json.dumps({"eagerness": 9, "intent": "end"}) if meta.get("phase") == "bid" else "收工！[END]"
+        json.dumps({"eagerness": 9, "intent": "x"}) if meta.get("phase") == "bid" else "收工！[END]"
     ))
     roles = load_roles(CHARS, client=client)
-    result = Orchestrator(roles, max_rounds=8).run()
-    assert len(result.turns) == 1
-    assert "[END]" in result.turns[0].text
+    result = Orchestrator(roles, max_rounds=6).run()
+    assert len(result.turns) == 6
+
+
+def test_on_turn_callback_streams():
+    client = seedcore.get_client(reload=True, mock_handler=demo_mock_handler)
+    seen = []
+    Orchestrator(_roles(), max_rounds=3).run(on_turn=lambda t: seen.append(t.round))
+    assert seen == [1, 2, 3]

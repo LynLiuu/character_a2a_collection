@@ -27,7 +27,8 @@ ark:
 ```
 
 > key 或默认 ep 仍是占位值时，client 自动走 **mock**，无需真实 key 即可端到端跑通。
-> 真实调用需安装方舟 SDK：`pip install volcengine-python-sdk`。
+> 真实调用走方舟 OpenAI 兼容 REST 接口（标准库 `urllib`，无需额外 SDK）。
+> 注：`seed-character` 模型不支持 `response_format=json_object`，抢麦的 JSON 靠提示词 + 宽松解析。
 
 ## 跑起来
 

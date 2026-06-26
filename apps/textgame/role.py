@@ -5,6 +5,7 @@ Role 不感知方舟/ep，只用 seedcore 的 client 与 trace。
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -80,25 +81,28 @@ class Role:
             "这是当前的公共对话记录：\n"
             f"{self._history_block(history)}\n\n"
             "现在轮到决定谁发言。基于你的人设和目标，你此刻有多想发言？\n"
-            "只输出 JSON：{\"eagerness\": 0到10的数字, \"intent\": \"你想说什么的一句话概括\"}"
+            "严格只输出一行 JSON，不要任何其它文字：\n"
+            "{\"eagerness\": 0到10的数字, \"intent\": \"你想说什么的一句话概括\"}"
         )
+        # 注：seed-character 模型不支持 response_format=json_object，靠提示词 + 宽松解析。
         result = self.client.chat(
             [Message("system", sys), Message("user", user)],
             max_tokens=120,
-            response_format="json",
             trace_span=trace_span,
             meta={"phase": "bid", "role": self.id, "round": rnd},
         )
         return self._parse_bid(result.content)
 
     def _parse_bid(self, content: str) -> Bid:
-        try:
-            data = json.loads(content)
-            eagerness = float(data.get("eagerness", 5))
-            intent = str(data.get("intent", "")).strip()
-        except (ValueError, TypeError, json.JSONDecodeError):
-            # 解析失败兜底：中等意愿
-            eagerness, intent = 5.0, ""
+        eagerness, intent = 5.0, ""  # 解析失败兜底：中等意愿
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+                eagerness = float(data.get("eagerness", 5))
+                intent = str(data.get("intent", "")).strip()
+            except (ValueError, TypeError, json.JSONDecodeError):
+                pass
         eagerness = max(0.0, min(10.0, eagerness))
         return Bid(eagerness=eagerness, intent=intent)
 
@@ -109,7 +113,7 @@ class Role:
             "这是当前的公共对话记录：\n"
             f"{self._history_block(history)}\n\n"
             "现在轮到你发言，说一句符合你人设、推动剧情的话。"
-            "只输出台词本身，不要带名字前缀。若你认为该结束这段对话，可在结尾加上 [END]。"
+            "只输出台词本身，不要带名字前缀。不要试图结束对话，让剧情继续发展下去。"
         )
         result = self.client.chat(
             [Message("system", sys), Message("user", user)],

@@ -7,7 +7,10 @@
 """
 from __future__ import annotations
 
+import json
 import time
+import urllib.error
+import urllib.request
 from typing import Any, Callable, Dict, List, Optional
 
 from . import trace
@@ -22,7 +25,6 @@ class ArkClient:
     def __init__(self, config: Optional[Config] = None, mock_handler: Optional[MockHandler] = None) -> None:
         self.config = config or get_config()
         self._mock_handler = mock_handler
-        self._sdk = None  # 懒加载，避免无 key/无依赖时报错
 
     def set_mock_handler(self, handler: MockHandler) -> "ArkClient":
         self._mock_handler = handler
@@ -104,42 +106,35 @@ class ArkClient:
         response_format: Optional[str],
         model: str,
     ) -> ChatResult:
-        sdk = self._ensure_sdk()
-        kwargs: Dict[str, Any] = {
-            "model": endpoint,
+        # 方舟 OpenAI 兼容 REST：POST {base_url}/chat/completions
+        url = self.config.ark.base_url.rstrip("/") + "/chat/completions"
+        payload: Dict[str, Any] = {
+            "model": endpoint,  # 可传 ep-xxxx 或模型名
             "messages": [m.to_dict() for m in messages],
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
         if response_format == "json":
-            kwargs["response_format"] = {"type": "json_object"}
-        resp = sdk.chat.completions.create(**kwargs)
-        choice = resp.choices[0]
-        usage = None
-        if getattr(resp, "usage", None) is not None:
-            usage = {
-                "prompt_tokens": getattr(resp.usage, "prompt_tokens", 0),
-                "completion_tokens": getattr(resp.usage, "completion_tokens", 0),
-                "total_tokens": getattr(resp.usage, "total_tokens", 0),
-            }
-        return ChatResult(
-            content=choice.message.content or "",
-            model=model,
-            usage=usage,
-            raw=resp,
+            payload["response_format"] = {"type": "json_object"}
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.config.ark.api_key}",
+            },
+            method="POST",
         )
+        try:
+            with urllib.request.urlopen(req, timeout=self.config.defaults.timeout_s) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")
+            raise RuntimeError(f"方舟 API 错误 {e.code}: {detail}") from e
 
-    def _ensure_sdk(self):
-        if self._sdk is None:
-            # 懒加载官方方舟 SDK，仅真实调用时才需要安装
-            from volcenginesdkarkruntime import Ark  # type: ignore
-
-            self._sdk = Ark(
-                api_key=self.config.ark.api_key,
-                base_url=self.config.ark.base_url or None,
-                timeout=self.config.defaults.timeout_s,
-            )
-        return self._sdk
+        content = data["choices"][0]["message"].get("content") or ""
+        return ChatResult(content=content, model=model, usage=data.get("usage"), raw=data)
 
 
 _client_singleton: Optional[ArkClient] = None
