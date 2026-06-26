@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #ffffff;
+  color: #1f2937;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+}
+
+/* 细滚动条 */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #d1d5db;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Markdown 预览的基础排版 */
+.md-preview h1,
+.md-preview h2,
+.md-preview h3 {
+  font-weight: 600;
+  margin: 0.6em 0 0.3em;
+}
+.md-preview p {
+  margin: 0.4em 0;
+  line-height: 1.6;
+}
+.md-preview ul {
+  list-style: disc;
+  padding-left: 1.2em;
+  margin: 0.4em 0;
+}
+.md-preview code {
+  background: #f3f4f6;
+  padding: 0 4px;
+  border-radius: 4px;
+}

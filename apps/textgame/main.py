@@ -33,7 +33,9 @@ def main() -> None:
         print("（未配置真实方舟 key，使用 mock 模式运行）\n")
 
     # 关掉逐 span 的控制台日志，让对话流清爽；trace 仍完整落到 JSONL。
-    seedcore.get_config().trace.console = False
+    cfg = seedcore.get_config()
+    cfg.trace.console = False
+    cfg.trace.dir = str(Path(__file__).parent / "traces")
 
     roles = load_roles(CHARACTERS_DIR, client=client)
     print("登场角色：" + "、".join(f"{r.name}({r.id})" for r in roles))

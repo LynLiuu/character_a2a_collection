@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
@@ -24,12 +25,38 @@ class Turn:
     speaker_id: str
     speaker_name: str
     text: str
+    latency_ms: Optional[float] = None
 
 
 @dataclass
 class GameResult:
     turns: List[Turn]
     trace_path: Optional[str]
+    reason: str = "max_rounds"
+
+
+class Controller:
+    """运行控制接口，默认全部 no-op（即原始无干预行为）。
+
+    WebSocket 服务端会用 WsController 实现这些方法，注入暂停/停止/指定发言/插旁白。
+    """
+
+    def wait_if_paused(self) -> None:
+        return None
+
+    def should_stop(self) -> bool:
+        return False
+
+    def next_speaker_override(self) -> Optional[str]:
+        """返回被指定的发言者 id（消费一次），无则 None。"""
+        return None
+
+    def drain_injections(self) -> List[str]:
+        """取出待插入的旁白文本（取走即清空）。"""
+        return []
+
+
+_NO_CONTROLLER = Controller()
 
 
 class Orchestrator:
@@ -59,17 +86,37 @@ class Orchestrator:
         )
         return best[0]
 
-    def run(self, on_turn: Optional[Callable[[Turn], None]] = None) -> GameResult:
+    def _role_by_id(self, rid: str) -> Optional[Role]:
+        for r in self.roles:
+            if r.id == rid:
+                return r
+        return None
+
+    def _bump_starvation(self, winner: Role) -> None:
+        for role in self.roles:
+            role.rounds_since_spoke = 0 if role.id == winner.id else role.rounds_since_spoke + 1
+
+    def run(
+        self,
+        on_turn: Optional[Callable[[Turn], None]] = None,
+        emit: Optional[Callable[[dict], None]] = None,
+        controller: Optional[Controller] = None,
+    ) -> GameResult:
         """跑一局对话。
 
-        max_rounds=None 时无限循环、永不自动结束（Ctrl+C 优雅停止）。
-        on_turn：每产生一轮发言就回调一次，用于实时流式打印。
+        max_rounds=None 时无限循环、永不自动结束。
+        on_turn：每产生一轮发言回调一次（向后兼容）。
+        emit(event)：把过程拆成结构化事件流（round_start/bid/pick/turn/narration/round_end/ended/error）。
+        controller：注入暂停/停止/指定发言/插旁白；默认无干预（同原行为）。
         """
+        emit = emit or (lambda e: None)
+        controller = controller or _NO_CONTROLLER
         turns: List[Turn] = []
         history: List[str] = []
         if self.scene:
             history.append(f"【场景】{self.scene}")
 
+        reason = "max_rounds"
         with seedcore.trace.start_trace(
             "textgame",
             roles=[r.id for r in self.roles],
@@ -79,36 +126,65 @@ class Orchestrator:
             try:
                 rnd = 0
                 while self.max_rounds is None or rnd < self.max_rounds:
+                    controller.wait_if_paused()
+                    if controller.should_stop():
+                        reason = "stopped"
+                        break
+
+                    # 旁白插入（不占发言轮）
+                    for text in controller.drain_injections():
+                        history.append(f"【旁白】{text}")
+                        emit({"type": "narration", "round": rnd, "text": text})
+
                     rnd += 1
+                    round_t0 = time.time()
+                    emit({"type": "round_start", "round": rnd})
                     with t.span("game.round", round=rnd) as round_span:
-                        scored = []
-                        for role in self.roles:
-                            with round_span.span("role.bid", role=role.id) as bid_span:
-                                bid = role.bid(history, rnd, trace_span=bid_span)
-                                weight = self._weight(role, bid)
-                                bid_span.set(eagerness=bid.eagerness, weight=round(weight, 2))
-                                scored.append((role, bid, weight))
+                        override = controller.next_speaker_override()
+                        forced = override is not None and self._role_by_id(override) is not None
 
-                        winner = self._pick(scored)
-                        round_span.set(winner=winner.id)
+                        if forced:
+                            winner = self._role_by_id(override)
+                        else:
+                            scored = []
+                            for role in self.roles:
+                                with round_span.span("role.bid", role=role.id) as bid_span:
+                                    bid = role.bid(history, rnd, trace_span=bid_span)
+                                    weight = self._weight(role, bid)
+                                    bid_span.set(eagerness=bid.eagerness, weight=round(weight, 2))
+                                    scored.append((role, bid, weight))
+                                    emit({
+                                        "type": "bid", "round": rnd, "role": role.id,
+                                        "eagerness": bid.eagerness, "intent": bid.intent,
+                                        "weight": round(weight, 2),
+                                    })
+                            winner = self._pick(scored)
 
+                        round_span.set(winner=winner.id, forced=forced)
+                        emit({"type": "pick", "round": rnd, "winner": winner.id, "forced": forced})
+
+                        speak_t0 = time.time()
                         with round_span.span("role.speak", role=winner.id) as speak_span:
                             text = winner.speak(history, rnd, trace_span=speak_span)
                             speak_span.set(chars=len(text))
+                        latency_ms = round((time.time() - speak_t0) * 1000, 2)
 
                         history.append(f"{winner.name}：{text}")
-                        turn = Turn(round=rnd, speaker_id=winner.id, speaker_name=winner.name, text=text)
+                        turn = Turn(rnd, winner.id, winner.name, text, latency_ms=latency_ms)
                         turns.append(turn)
                         if on_turn is not None:
                             on_turn(turn)
+                        emit({
+                            "type": "turn", "round": rnd, "role": winner.id,
+                            "name": winner.name, "text": text, "latency_ms": latency_ms,
+                        })
 
-                        # 更新防饿死计数
-                        for role in self.roles:
-                            if role.id == winner.id:
-                                role.rounds_since_spoke = 0
-                            else:
-                                role.rounds_since_spoke += 1
+                        self._bump_starvation(winner)
+                    emit({"type": "round_end", "round": rnd,
+                          "duration_ms": round((time.time() - round_t0) * 1000, 2)})
             except KeyboardInterrupt:
+                reason = "interrupted"
                 t.set(interrupted=True)
 
-        return GameResult(turns=turns, trace_path=trace_path)
+        emit({"type": "ended", "reason": reason, "total_turns": len(turns), "trace_path": trace_path})
+        return GameResult(turns=turns, trace_path=trace_path, reason=reason)

@@ -28,13 +28,13 @@
 │  /ws/session            WebSocket：双向，跑一局可控对话                    │
 │  /api/characters        人设卡 CRUD（读写 characters/ 目录）              │
 │  /api/sessions          历史会话列表 / 对话记录 / trace / 时延聚合         │
-│  静态托管 frontend/dist （生产模式）                                      │
+│  静态托管 apps/textgame/frontend/dist （生产模式）                        │
 └──────────┬───────────────────────────────────────────────────────────────┘
            ▼
    apps/textgame (引擎) ──► seedcore (底座：Client/Config/Trace)
 ```
 
-- 后端代码放 `apps/textgame/server/`（与引擎同源），前端独立 `frontend/`。
+- 后端代码放 `apps/textgame/server/`（与引擎同源），前端 `apps/textgame/frontend/`，整个 app 自包含。
 - 引擎/底座是同步阻塞（`urllib` 调方舟）。对话循环跑在**后台线程**里，通过线程安全队列把事件桥接给 WS 协程；WS 收到的控制指令进另一条命令队列。这样不改造底座的同步模型。
 
 ---
@@ -122,7 +122,7 @@ assertiveness: 0.8
 - 写入有基本校验（id 合法、必填字段、避免越权路径）。
 
 ### 4.3 REST 会话/记录 `/api/sessions`
-每局结束把**对话记录**落盘 `sessions/{session_id}.json`（含 turns + 元信息 + trace_id）。
+每局结束把**对话记录**落盘 `apps/textgame/sessions/{session_id}.json`（含 turns + 元信息 + trace_id）。
 - `GET /api/sessions` → 历史列表
 - `GET /api/sessions/{id}` → 对话记录
 - `GET /api/sessions/{id}/trace` → 解析该 trace 的 JSONL，返回 **span 树**（嵌套结构，含 duration/status/attributes）
@@ -163,7 +163,7 @@ assertiveness: 0.8
 
 ## 6. 三类结果如何呈现
 
-1. **对话记录**：中央对话流实时显示；落盘 `sessions/{id}.json`；历史可在「会话列表」回看。
+1. **对话记录**：中央对话流实时显示；落盘 `apps/textgame/sessions/{id}.json`；历史可在「会话列表」回看。
 2. **Trace**：右侧 Trace tab 的 span 树（`textgame→round→bid/speak→llm.call`），实时增量 + 结束后从 JSONL 校正；保留底座已埋的全部属性（model/ep/token/latency/mock…）。
 3. **分层时延**（来自 trace 的 `latency_ms`/span duration）：
    - 总时延、轮数、平均每轮
@@ -188,10 +188,11 @@ apps/textgame/
   session.py            # WsController + run_session_in_thread
   characters/
     *.yaml + *.md       # 迁移后的人设卡
-sessions/               # 对话记录落盘 (gitignore)
-frontend/               # React+Vite+Tailwind
-  src/ ... (组件如上)
-  vite.config.ts        # dev proxy 到 :8000
+  sessions/             # 对话记录落盘 (gitignore)
+  traces/               # trace JSONL 落盘 (gitignore)
+  frontend/             # React+Vite+Tailwind
+    src/ ... (组件如上)
+    vite.config.ts      # dev proxy 到 :8000
 tests/apps/textgame/
   test_characters_api.py
   test_session_control.py   # 暂停/停止/指定发言/插旁白
@@ -207,11 +208,11 @@ tests/apps/textgame/
 开发：
 ```
 uvicorn apps.textgame.server.app:app --reload   # 后端 :8000
-cd frontend && npm install && npm run dev        # 前端 :5173（代理到 8000）
+cd apps/textgame/frontend && npm install && npm run dev   # 前端 :5173（代理到 8000）
 ```
 一体化（构建后单端口）：
 ```
-cd frontend && npm run build      # 产出 dist/
+cd apps/textgame/frontend && npm run build   # 产出 apps/textgame/frontend/dist/
 uvicorn apps.textgame.server.app:app   # 后端直接托管前端 :8000
 ```
 无真实 key/ep 时仍自动 mock，前端可完整体验。
@@ -231,7 +232,7 @@ uvicorn apps.textgame.server.app:app   # 后端直接托管前端 :8000
 
 ## 10. 待你拍板的点
 
-1. 文件结构：后端放 `apps/textgame/server/` + 前端 `frontend/`，OK 吗？
+1. 文件结构：后端放 `apps/textgame/server/` + 前端 `apps/textgame/frontend/`，OK 吗？
 2. 控制能力先做哪些？建议首版：暂停/继续/停止/**指定下一发言者**/**插入旁白**。够吗？
 3. 历史会话列表（回看过去对话/trace）要不要进首版？（建议要，落盘很轻）
 4. 头像用 emoji + 主题色够吗？还是要上传图片？

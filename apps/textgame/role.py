@@ -16,27 +16,70 @@ import seedcore
 from seedcore import Message
 
 
+DEFAULT_AVATAR = "🎭"
+DEFAULT_COLOR = "#8b8b8b"
+
+
 @dataclass
 class Persona:
+    """一张人设卡 = 结构化字段(yaml) + Markdown 人设正文({id}.md)。"""
+
     id: str
     name: str
-    persona: str
+    persona: str  # Markdown 正文，来自 {id}.md（缺省回退 yaml 的 persona 字段）
     goals: List[str] = field(default_factory=list)
     speaking_style: str = ""
     assertiveness: float = 0.5
+    avatar: str = DEFAULT_AVATAR
+    color: str = DEFAULT_COLOR
 
     @classmethod
     def load(cls, path: Path) -> "Persona":
-        with Path(path).open("r", encoding="utf-8") as f:
+        """path 指向 {id}.yaml；同名 {id}.md 存在则作为人设正文。"""
+        path = Path(path)
+        with path.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+        md_path = path.with_suffix(".md")
+        if md_path.exists():
+            persona = md_path.read_text(encoding="utf-8").strip()
+        else:
+            persona = (data.get("persona") or "").strip()
         return cls(
             id=data["id"],
             name=data["name"],
-            persona=data["persona"].strip(),
+            persona=persona,
             goals=list(data.get("goals", [])),
             speaking_style=data.get("speaking_style", ""),
             assertiveness=float(data.get("assertiveness", 0.5)),
+            avatar=data.get("avatar", DEFAULT_AVATAR),
+            color=data.get("color", DEFAULT_COLOR),
         )
+
+    def to_meta(self) -> Dict[str, Any]:
+        """结构化字段（不含正文），用于写 yaml / API 列表。"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "avatar": self.avatar,
+            "color": self.color,
+            "goals": list(self.goals),
+            "speaking_style": self.speaking_style,
+            "assertiveness": self.assertiveness,
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        """完整卡片（含正文），用于 API 单卡返回。"""
+        return {**self.to_meta(), "persona": self.persona}
+
+    def save(self, characters_dir: Path) -> None:
+        """写回磁盘：{id}.yaml(元信息) + {id}.md(正文)。"""
+        characters_dir = Path(characters_dir)
+        characters_dir.mkdir(parents=True, exist_ok=True)
+        yaml_path = characters_dir / f"{self.id}.yaml"
+        md_path = characters_dir / f"{self.id}.md"
+        with yaml_path.open("w", encoding="utf-8") as f:
+            yaml.safe_dump(self.to_meta(), f, allow_unicode=True, sort_keys=False)
+        md_path.write_text(self.persona.strip() + "\n", encoding="utf-8")
 
 
 @dataclass
