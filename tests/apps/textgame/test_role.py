@@ -11,7 +11,7 @@ def test_persona_load():
     p = Persona.load(CHARS / "alice.yaml")
     assert p.id == "alice"
     assert p.name == "爱丽丝"
-    assert p.assertiveness == 0.8
+    assert p.assertiveness == 0.85
     assert p.goals
 
 

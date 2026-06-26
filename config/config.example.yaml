@@ -7,12 +7,14 @@ ark:
   endpoints:
     seed-default: "PLACEHOLDER_EP_DEFAULT"
     seed-lite: "PLACEHOLDER_EP_LITE"
+    seedream: "PLACEHOLDER_EP_SEEDREAM"          # seedream 文生图（底座 seedream）
+    seed-2.1-pro: "PLACEHOLDER_EP_SEED_21_PRO"   # seed-2.1-pro 多模态视觉理解（底座 seed21pro）
 
 defaults:
   model: "seed-default"
   temperature: 0.8
   max_tokens: 1024
-  timeout_s: 30
+  timeout_s: 60
 
 trace:
   enabled: true

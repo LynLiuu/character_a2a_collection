@@ -13,10 +13,14 @@ import { useSession } from "./useSession";
 
 type RightTab = "trace" | "latency" | "history";
 
+// 默认场景：与三位角色的森林探险设定一致，开箱即用。
+const DEFAULT_SCENE =
+  "暮色四合的迷雾森林深处，一行人循着残破地图寻找传说中被藤蔓缠绕的古井，林间不时传来说不清来历的声响。";
+
 export default function App() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
-  const [scene, setScene] = useState("");
+  const [scene, setScene] = useState(DEFAULT_SCENE);
   const [maxRounds, setMaxRounds] = useState("");
   const [mock, setMock] = useState<boolean | null>(null);
 
@@ -58,10 +62,10 @@ export default function App() {
     api.health().then((h) => setMock(h.mock)).catch(() => setMock(null));
   }, [loadCharacters, loadSessions]);
 
-  // 默认选中前三个角色
+  // 默认选中前四个角色（含新增的傲娇角色）
   useEffect(() => {
     if (characters.length && selected.length === 0) {
-      setSelected(characters.slice(0, 3).map((c) => c.id));
+      setSelected(characters.slice(0, 4).map((c) => c.id));
     }
   }, [characters]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -201,7 +205,12 @@ export default function App() {
             </div>
           )}
           <div className="min-h-0 flex-1">
-            <ConversationStream scene={streamScene} items={streamItems} characters={characters} />
+            <ConversationStream
+              scene={streamScene}
+              items={streamItems}
+              characters={characters}
+              backgroundUrl={isHistory ? null : state.backgroundUrl}
+            />
           </div>
           {!isHistory && (
             <ControlBar

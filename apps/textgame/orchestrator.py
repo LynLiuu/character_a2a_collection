@@ -16,6 +16,7 @@ from typing import Callable, List, Optional
 
 import seedcore
 
+from .gm import Narrator
 from .role import Bid, Role
 
 
@@ -66,6 +67,7 @@ class Orchestrator:
         scene: str = "",
         max_rounds: Optional[int] = 8,  # None = 无限轮，永不自动结束
         starvation_bonus: float = 1.5,
+        narrator: Optional[Narrator] = None,
     ) -> None:
         if not roles:
             raise ValueError("至少需要一个角色")
@@ -73,6 +75,7 @@ class Orchestrator:
         self.scene = scene.strip()
         self.max_rounds = max_rounds
         self.starvation_bonus = starvation_bonus
+        self.narrator = narrator
 
     def _weight(self, role: Role, bid: Bid) -> float:
         base = bid.eagerness * (0.5 + role.persona.assertiveness)
@@ -134,12 +137,26 @@ class Orchestrator:
                     # 旁白插入（不占发言轮）
                     for text in controller.drain_injections():
                         history.append(f"【旁白】{text}")
-                        emit({"type": "narration", "round": rnd, "text": text})
+                        emit({"type": "narration", "round": rnd, "text": text, "source": "inject"})
 
                     rnd += 1
                     round_t0 = time.time()
                     emit({"type": "round_start", "round": rnd})
                     with t.span("game.round", round=rnd) as round_span:
+                        # GM/旁白：开局 + 每隔几轮抛一个外部事件，内联跑，旁白先入 history
+                        # 角色当轮才能据此反应。失败静默跳过，绝不影响对话。
+                        if self.narrator is not None and self.narrator.should_fire(rnd):
+                            try:
+                                with round_span.span("gm.narrate", round=rnd) as gm_span:
+                                    narration = self.narrator.narrate(history, rnd, trace_span=gm_span)
+                                    gm_span.set(chars=len(narration))
+                                if narration:
+                                    history.append(f"【旁白】{narration}")
+                                    emit({"type": "narration", "round": rnd,
+                                          "text": narration, "source": "gm"})
+                            except Exception:  # noqa: BLE001 - GM 失败不能拖垮对话
+                                pass
+
                         override = controller.next_speaker_override()
                         forced = override is not None and self._role_by_id(override) is not None
 

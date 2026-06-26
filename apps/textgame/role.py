@@ -106,10 +106,17 @@ class Role:
         p = self.persona
         parts = [p.persona]
         if p.goals:
-            parts.append("你的目标：\n" + "\n".join(f"- {g}" for g in p.goals))
+            parts.append(
+                "你的目标（每次发言都要为之努力，主动争取、绝不被动观望）：\n"
+                + "\n".join(f"- {g}" for g in p.goals)
+            )
         if p.speaking_style:
             parts.append(f"说话风格：{p.speaking_style}")
-        parts.append(f"你是「{p.name}」，请始终保持人设，用第一人称发言，不要旁白。")
+        parts.append(
+            f"你是「{p.name}」，请始终保持人设，用第一人称。"
+            "你身处一场正在推进的冒险，要像真正的人那样行动：可以提议、质疑、做决定，"
+            "也可以用括号描述自己的动作（如「（拨开藤蔓往井口探身）」）。"
+        )
         return "\n\n".join(parts)
 
     def _history_block(self, history: List[str]) -> str:
@@ -155,8 +162,13 @@ class Role:
         user = (
             "这是当前的公共对话记录：\n"
             f"{self._history_block(history)}\n\n"
-            "现在轮到你发言，说一句符合你人设、推动剧情的话。"
-            "只输出台词本身，不要带名字前缀。不要试图结束对话，让剧情继续发展下去。"
+            "现在轮到你了。为了你的目标做点什么——你的发言必须让剧情往前走一步，"
+            "三选一：\n"
+            "1) 做出一个具体行动或决定（用括号描述动作，并说出你要做什么）；\n"
+            "2) 揭露/提出一条新信息、新线索或新主张；\n"
+            "3) 直接回应刚发生的事件，把冲突或处境推向下一步。\n"
+            "不要重复别人已经说过的话，不要原地空谈或反复犹豫，不要试图结束冒险。"
+            "只输出你的台词/动作本身，不要带名字前缀。"
         )
         result = self.client.chat(
             [Message("system", sys), Message("user", user)],

@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional
 
 import seedcore
 
+from .background import BackgroundDirector
+from .gm import Narrator
 from .orchestrator import Controller, Orchestrator
 from .role import Role
 from .store import get_persona
@@ -87,23 +89,45 @@ def run_session_in_thread(
     *,
     client=None,
     characters_dir=None,
+    dynamic_background: bool = True,
+    dynamic_gm: bool = True,
 ) -> threading.Thread:
-    """后台线程跑一局；事件 emit 到 out_queue（结束/异常也入队）。返回线程对象。"""
+    """后台线程跑一局；事件 emit 到 out_queue（结束/异常也入队）。返回线程对象。
+
+    dynamic_background=True 时挂上 BackgroundDirector：它旁观事件流、异步生成动态背景，
+    生成完成后把 background 事件也丢进 out_queue。生成全在独立线程里，不阻塞对话。
+
+    dynamic_gm=True 时挂上 Narrator（旁白导演）：开局 + 每隔几轮内联抛出一个外部事件/转折，
+    写进公共历史推动剧情，避免角色原地斗嘴。
+    """
+    scene = config.get("scene", "")
+    director: Optional[BackgroundDirector] = (
+        BackgroundDirector(scene, emit=out_queue.put) if dynamic_background else None
+    )
+    narrator: Optional[Narrator] = (
+        Narrator(scene, client=client) if dynamic_gm else None
+    )
 
     def _emit(event: Dict[str, Any]) -> None:
         out_queue.put(event)
+        if director is not None:
+            director.observe(event)  # 仅做快速记账/非阻塞触发，不会拖慢对话
 
     def _run() -> None:
         try:
             roles = build_roles(config["roles"], client=client, characters_dir=characters_dir)
             orch = Orchestrator(
                 roles,
-                scene=config.get("scene", ""),
+                scene=scene,
                 max_rounds=config.get("max_rounds", None),
+                narrator=narrator,
             )
             orch.run(emit=_emit, controller=controller)
         except Exception as exc:  # noqa: BLE001 - 兜底，保证前端收到错误
             out_queue.put({"type": "error", "msg": f"{type(exc).__name__}: {exc}"})
+        finally:
+            if director is not None:
+                director.stop()
 
     thread = threading.Thread(target=_run, name="textgame-session", daemon=True)
     thread.start()

@@ -45,11 +45,23 @@ _INTENTS = {
     "cara": "指出一个被忽略的关键线索",
 }
 
+# GM/旁白按出场顺序预设的推进事件，纯本地、可复现。
+_GM_LINES = [
+    "暮色压下来，残破地图的边角忽然渗出微光，指向林深处一口被藤蔓封死的古井。",
+    "井口的藤蔓无风自动，井底深处传来一声闷响，像是有什么东西被惊醒了。",
+    "一只苍白的手攀上井沿，紧接着是第二只——湿漉漉的水痕正朝众人脚边蔓延。",
+    "脚下的地面发出碎裂声，半圈青苔石板正缓缓向井口倾塌，留给众人的立足之地越来越小。",
+]
+
 
 def demo_mock_handler(messages: List[Message], meta: Dict[str, Any]) -> str:
     role = meta.get("role", "")
     rnd = int(meta.get("round", 1))
     phase = meta.get("phase", "")
+
+    if phase == "gm":
+        idx = ((rnd - 1) // 3) % len(_GM_LINES)
+        return _GM_LINES[idx]
 
     if phase == "bid":
         # 用稳定 hash 让意愿在轮次间有起伏，但可复现

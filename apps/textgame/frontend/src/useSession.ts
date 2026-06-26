@@ -30,6 +30,8 @@ export interface SessionState {
   error: string | null;
   endedReason: string | null;
   totalTurns: number;
+  backgroundUrl: string | null;
+  backgroundPrompt: string | null;
 }
 
 const EMPTY: SessionState = {
@@ -41,6 +43,8 @@ const EMPTY: SessionState = {
   error: null,
   endedReason: null,
   totalTurns: 0,
+  backgroundUrl: null,
+  backgroundPrompt: null,
 };
 
 export function useSession() {
@@ -93,7 +97,7 @@ export function useSession() {
         case "narration":
           return {
             ...s,
-            items: [...s.items, { kind: "narration", round: ev.round, text: ev.text }],
+            items: [...s.items, { kind: "narration", round: ev.round, text: ev.text, source: ev.source }],
           };
         case "round_end": {
           const rounds = s.rounds.map((r) =>
@@ -107,6 +111,8 @@ export function useSession() {
           return { ...s, status: "error", error: ev.msg };
         case "state":
           return { ...s, status: ev.paused ? "paused" : "running" };
+        case "background":
+          return { ...s, backgroundUrl: ev.url, backgroundPrompt: ev.prompt };
         default:
           return s;
       }

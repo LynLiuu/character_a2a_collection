@@ -28,15 +28,19 @@ export interface EvTurn {
   type: "turn"; round: number; role: string; name: string;
   text: string; latency_ms: number;
 }
-export interface EvNarration { type: "narration"; round: number; text: string; }
+export interface EvNarration { type: "narration"; round: number; text: string; source?: "gm" | "inject"; }
 export interface EvRoundEnd { type: "round_end"; round: number; duration_ms: number; }
 export interface EvEnded { type: "ended"; reason: string; total_turns: number; trace_path: string | null; }
 export interface EvError { type: "error"; msg: string; }
 export interface EvState { type: "state"; paused: boolean; }
+export interface EvBackground {
+  type: "background"; url: string; prompt: string;
+  round: number; seq: number; reason: string;
+}
 
 export type ServerEvent =
   | EvSession | EvRoundStart | EvBid | EvPick | EvTurn
-  | EvNarration | EvRoundEnd | EvEnded | EvError | EvState;
+  | EvNarration | EvRoundEnd | EvEnded | EvError | EvState | EvBackground;
 
 // 对话流里的一条消息（发言或旁白）
 export interface ChatItem {
@@ -46,6 +50,7 @@ export interface ChatItem {
   name?: string;
   text: string;
   latency_ms?: number;
+  source?: "gm" | "inject";
 }
 
 // --- Trace ---
