@@ -4,6 +4,9 @@ config/config.yaml
 # trace 落地
 traces/
 
+# IDE
+.idea/
+
 # python
 __pycache__/
 *.py[cod]
