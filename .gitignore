@@ -1,8 +1,14 @@
 # 本地真实配置（含 key），不进 git
 config/config.yaml
 
-# trace 落地
-traces/
+# textgame 运行产物（trace / 对话记录）落在 app 目录下
+apps/textgame/traces/
+apps/textgame/sessions/
+
+# 前端依赖与构建产物
+apps/textgame/frontend/node_modules/
+apps/textgame/frontend/dist/
+apps/textgame/frontend/*.tsbuildinfo
 
 # IDE
 .idea/
